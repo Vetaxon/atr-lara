@@ -1,4 +1,5 @@
 <?php
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -11,6 +12,11 @@
 |
 */
 
-Route::get('/', function () {
-    return view('welcome');
-});
+
+//Route::get('/', function () {
+//    return view('welcome');
+//});
+
+
+Route::get('/', [ 'uses' => 'ExportController@welcome', 'as' => 'home'] );
+Route::get('/view', [ 'uses' => 'ExportController@viewStudents', 'as' => 'view'] );
