@@ -2,112 +2,60 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Course;
-use App\Models\Student;
+use App\Models\Repositories\StudentsRepository;
+use App\Models\Repositories\CoursesRepository;
+use App\Services\Responses\Contracts\StudentsCoursesCsvResponseInterface;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\Request;
 
-class ExportController extends Controller
+/**
+ * Class ExportController
+ * @package App\Http\Controllers
+ * @property StudentsRepository $studentsRepository
+ * @property CoursesRepository $coursesRepository
+ */
+class ExportController extends CoreAbstractController
 {
+    /**
+     * View all students found in the database
+     * @return \Illuminate\Contracts\View\Factory|\Illuminate\View\View
+     */
     public function welcome()
     {
-        return view('hello');
+        return $this->getView();
     }
 
     /**
      * View all students found in the database
+     * @param StudentsCoursesCsvResponseInterface $coursesCsvResponse
+     * @return \Illuminate\Contracts\View\Factory|\Illuminate\View\View
      */
-    public function viewStudents()
+    public function viewStudents(StudentsCoursesCsvResponseInterface $coursesCsvResponse)
     {
-        $students = Student::with('course');
-        return view('view_students', ['students' => $students->get()->toArray(), 'map' => $this->getStudentsTableMap()]);
+        $students = $this->studentsRepository->getCollection(function (Builder $query) {
+            return $query->with('course');
+        });
+        return $this->getView(null, ['students' => $students->toArray(), 'map' => $coursesCsvResponse->getStudentsTableMap()]);
     }
 
     /**
      * Exports all student data to a CSV file
+     * @param StudentsCoursesCsvResponseInterface $coursesCsvResponse
+     * @return StreamedResponse
      */
-    public function exportStudentsToCSV() : StreamedResponse
+    public function exportStudentsToCSV(StudentsCoursesCsvResponseInterface $coursesCsvResponse) : StreamedResponse
     {
-        $ids = Request::query('ids');
-        $query = Student::with('course');
-
-        if (!empty($ids)) {
-            $query->whereIn('id', array_map(function ($id) {
-                return (int) $id;
-            }, $ids));
-        }
-
-        return $this->getStudentsTableCsvStream($query, $this->getStudentsTableMap());
+        return $coursesCsvResponse->studentsToCSV(['ids' => Request::query('ids')]);
     }
 
     /**
      * Exports the total amount of students that are taking each course to a CSV file
-     */
-    public function exportCourseAttendanceToCSV()
-    {
-        $ids = Request::query('ids');
-        $tableMap = [
-            'Course name' => function(array $data) : string {return $data['course_name'];},
-            'NO students' => function(array $data) : string {return $data['count'];},
-        ];
-
-        $query = Course::query()
-            ->selectRaw('courses.course_name, COUNT(students.id) as count')
-            ->join('students', 'students.course_id', '=', 'courses.id')
-            ->groupBy('courses.course_name')
-            ->orderBy('courses.course_name');
-
-        if (!empty($ids)) {
-            $query->whereIn('students.id', array_map(function ($id) {
-                return (int) $id;
-            }, $ids));
-        }
-
-        return $this->getStudentsTableCsvStream($query, $tableMap);
-    }
-
-
-    /**
-     * @return array
-     */
-    protected function getStudentsTableMap() : array
-    {
-        return [
-            'Forename' => function(array $student) : string {return $student['firstname'];},
-            'Surname' => function(array $student) : string {return $student['surname'];},
-            'Email' => function(array $student) : string {return $student['email'];},
-            'University' => function(array $student) : string {return $student['course']['university'] ?? '';},
-            'Course' => function(array $student) : string {return $student['course']['course_name'] ?? '';},
-        ];
-    }
-
-    /**
-     * @param Builder $query
-     * @param array $tableMap
+     * @param StudentsCoursesCsvResponseInterface $coursesCsvResponse
      * @return StreamedResponse
      */
-    protected function getStudentsTableCsvStream(Builder $query, array $tableMap) : StreamedResponse
+    public function exportCourseAttendanceToCSV(StudentsCoursesCsvResponseInterface $coursesCsvResponse): StreamedResponse
     {
-        return new StreamedResponse(function() use ($tableMap, $query) {
-
-            $handle = fopen('php://output', 'w');
-            fputcsv($handle, array_keys($tableMap));
-
-            $query->chunk(5, function (Collection $data) use ($handle, $tableMap) {
-                foreach ($data->toArray() as $dataPrepared) {
-                    fputcsv($handle, array_map(function (callable $call) use ($dataPrepared) {
-                        return $call($dataPrepared);
-                    }, $tableMap));
-                }
-            });
-
-            fclose($handle);
-        }, 200, [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment',
-            'Content-Filename' => 'export.csv',
-        ]);
+        return $coursesCsvResponse->courseAttendanceToCSV(['ids' => Request::query('ids')]);
     }
 }
